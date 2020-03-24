@@ -1,19 +1,21 @@
 import { printSchema, parse, visit, ASTKindToNode, NamedTypeNode, TypeNode, VisitFn } from 'graphql';
 import casual from 'casual';
 import { PluginFunction } from '@graphql-codegen/plugin-helpers';
-import { pascalCase } from 'pascal-case';	
+import { pascalCase } from 'pascal-case';
 
-export function toPascalCase(str: string) {	
-  if (str.charAt(0) === '_') {	
-    return str.replace(/^(_*)(.*)/, (_match, underscorePrefix, typeName) => `${underscorePrefix}${pascalCase(typeName || '')}`);	
-  }	
+export function toPascalCase(str: string) {
+    if (str.charAt(0) === '_') {
+        return str.replace(
+            /^(_*)(.*)/,
+            (_match, underscorePrefix, typeName) => `${underscorePrefix}${pascalCase(typeName || '')}`,
+        );
+    }
 
-  return pascalCase(str || '');	
+    return pascalCase(str || '');
 }
 
 const toMockName = (name: string) => {
-    const isVowel = name.match(/^[AEIO]/);
-    return isVowel ? `an${name}` : `a${name}`;
+    return `mock${name}`;
 };
 
 const hashedString = (value: string) => {
