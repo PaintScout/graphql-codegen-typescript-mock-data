@@ -43,6 +43,8 @@ const getNamedType = (typeName, fieldName, types, namedType) => {
             return casual.integer(0, 9999);
         case 'Date':
             return `'${new Date(casual.unix_time).toISOString()}'`;
+        // case 'JSON':
+        //     return `{}`;
         default:
             const foundType = types.find(enumType => enumType.name === name);
             if (foundType) {
@@ -62,6 +64,7 @@ const getNamedType = (typeName, fieldName, types, namedType) => {
     }
 };
 const generateMockValue = (typeName, fieldName, types, currentType) => {
+    // console.log(typeName, currentType.kind);
     switch (currentType.kind) {
         case 'NamedType':
             return getNamedType(typeName, fieldName, types, currentType);
@@ -72,10 +75,10 @@ const generateMockValue = (typeName, fieldName, types, currentType) => {
             return `[${value}]`;
     }
 };
-const getMockString = (typeName, fields, addTypename = false) => {
+const getMockString = (typeName, fields, addTypename = false, returnType = typeName) => {
     const typename = addTypename ? `\n        __typename: '${typeName}',` : '';
     return `
-export const ${toMockName(typeName)} = (overrides?: Partial<${typeName}>): ${typeName} => {
+export const ${toMockName(typeName)} = (overrides?: Partial<${returnType}>): ${returnType} => {
     return {${typename}
 ${fields}
         ...overrides
@@ -90,6 +93,7 @@ export const plugin = (schema, documents, config) => {
     const astNode = parse(printedSchema); // Transforms the string into ASTNode
     // List of types that are enums
     const types = [];
+    const scalars = [];
     const visitor = {
         EnumTypeDefinition: node => {
             const name = node.name.value;
@@ -117,6 +121,7 @@ export const plugin = (schema, documents, config) => {
                 name: fieldName,
                 mockFn: (typeName) => {
                     const value = generateMockValue(typeName, fieldName, types, node.type);
+                    // console.log(typeName, fieldName, node.type, value);
                     return `        ${fieldName}: ${value},`;
                 },
             };
@@ -138,6 +143,18 @@ export const plugin = (schema, documents, config) => {
                 },
             };
         },
+        InterfaceTypeDefinition: node => {
+            // This function triggered per each type
+            const typeName = node.name.value;
+            const { fields } = node;
+            return {
+                typeName,
+                mockFn: () => {
+                    const mockFields = fields ? fields.map(({ mockFn }) => mockFn(typeName)).join('\n') : '';
+                    return getMockString(typeName, mockFields, false);
+                },
+            };
+        },
         ObjectTypeDefinition: node => {
             // This function triggered per each type
             const typeName = node.name.value;
@@ -153,14 +170,29 @@ export const plugin = (schema, documents, config) => {
                 },
             };
         },
+        ScalarTypeDefinition: node => {
+            const typeName = node.name.value;
+            if (!scalars.includes(typeName)) {
+                scalars.push(typeName);
+            }
+            return {
+                typeName: node.name.value,
+                mockFn: () => {
+                    return getMockString(typeName, '', !!config.addTypename, `Scalars['${typeName}']`);
+                },
+            };
+        },
     };
     const result = visit(astNode, { leave: visitor });
     const definitions = result.definitions.filter((definition) => !!definition);
     const typesFile = config.typesFile ? config.typesFile.replace(/\.[\w]+$/, '') : null;
     const typeImports = definitions
-        .map(({ typeName }) => typeName)
-        .filter((typeName) => !!typeName);
+        .filter(({ typeName }) => !!typeName && !scalars.includes(typeName))
+        .map(({ typeName }) => typeName);
     typeImports.push(...types.map(({ name }) => name));
+    if (scalars.length > 0) {
+        typeImports.push('Scalars');
+    }
     // List of function that will generate the mock.
     // We generate it after having visited because we need to distinct types from enums
     const mockFns = definitions.map(({ mockFn }) => mockFn).filter((mockFn) => !!mockFn);
